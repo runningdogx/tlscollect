@@ -9,18 +9,8 @@ module TLSCollect
   
     @@default_ca_cert_path = "certs/ca-bundle.crt"
 
-    @@protocols = [:TLSv1, :SSLv3, :SSLv2]
-    @@basic_ciphers = [
-                       ['RC4-MD5', 'TLSv1/SSLv3', 128, 128],
-                       ['RC4-MD5', 'SSLv2', 128, 128],
-                       ['RC4-SHA', 'TLSv1/SSLv3', 128, 128],
-                       ['DES-CBC3-SHA', 'TLSv1/SSLv3', 168, 168],
-                       ['DHE-RSA-AES256-SHA', 'TLSv1/SSLv3', 256, 256],
-                       ['DHE-RSA-AES128-SHA', 'TLSv1/SSLv3', 128, 128],
-                       ['AES256-SHA', 'TLSv1/SSLv3', 256, 256],
-                       ['AES128-SHA', 'TLSv1/SSLv3', 128, 128],
-                       ['EXP-RC4-MD5', 'SSLv2', 40, 128]
-                      ]
+    @@protocols = [:TLSv1_2, :TLSv1_1, :TLSv1, :SSLv3, :SSLv2]
+    @@basic_ciphers = 'ALL:aNULL:eNULL'
   
     def initialize(params)
       @ca_cert_path = (params[:ca_cert_path] ? params[:ca_cert_path] : @@default_ca_cert_path)
@@ -103,18 +93,10 @@ module TLSCollect
     def init_context
       sock = get_sock
       return nil unless sock
-      ssl = OpenSSL::SSL::SSLSocket.new(sock)
+      context = OpenSSL::SSL::SSLContext.new()
+      context.ciphers = "ALL:aNULL:eNULL"
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
       @candidate_ciphers = ssl.context.ciphers.collect { |c| Cipher.parse(c) }
-      [["NULL-MD5", "SSLv2", 0, 0],["NULL-MD5", "SSLv2", 0, 0],
-       ["NULL-MD5", "TLSv1/SSLv3", 0, 0],["NULL-MD5", "TLSv1/SSLv3", 0, 0]].each do |c|
-        @candidate_ciphers << Cipher.parse(c)
-      end
-      [["ECDHE-RSA-RC4-SHA", "TLSv1/SSLv3", 128, 128], ["ECDHE-RSA-RC4-MD5", "TLSv1/SSLv3", 128, 128],
-       ["ECDHE-RSA-AES256-SHA", "TLSv1/SSLv3", 256, 256], ["ECDHE-RSA-AES128-SHA", "TLSv1/SSLv3", 128, 128],
-       ["ECDHE-ECDSA-AES256-SHA", "TLSv1/SSLv3", 256, 256], ["ECDHE-ECDSA-AES128-SHA", "TLSv1/SSLv3", 128, 128],
-       ["ECDHE-RSA-DES-CBC3-SHA", "TLSv1/SSLv3", 168, 168],  ["ECDHE-ECDSA-DES-CBC3-SHA", "TLSv1/SSLv3", 168, 168]].each do |c|
-         @candidate_ciphers << Cipher.parse(c)
-      end
     end
 
     def get_sock
