@@ -111,11 +111,20 @@ module TLSCollect
     end
   
     def key_length
-      public_key.n.num_bytes * 8
+      if public_key.class == OpenSSL::PKey::EC
+        keyintro = public_key.to_text.lines.first
+        keysize = keyintro.gsub(/^.*Private-Key: .([0-9]*) bit.*/, '\1').to_i
+      else
+        public_key.n.num_bytes * 8
+      end
     end
 
     def short?
-      key_length < 2048
+      if public_key.class == OpenSSL::PKey::EC
+        key_length < 224
+      else
+        key_length < 2048
+      end
     end
 
     def expired?
