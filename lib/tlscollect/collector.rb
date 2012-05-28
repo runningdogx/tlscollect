@@ -7,13 +7,16 @@ module TLSCollect
     attr_accessor :host, :addr, :port, :default_cipher, :protocols, :ciphers,
                   :certificate, :verified, :timestamp, :totals
   
-    @@default_ca_cert_path = "certs/ca-bundle.crt"
+    @@default_ca_cert_paths = [
+      "/etc/ssl/certs/ca-certificates.crt",
+      "certs/ca-bundle.crt",
+    ]
 
     @@protocols = [:TLSv1_2, :TLSv1_1, :TLSv1, :SSLv3, :SSLv2]
     @@basic_ciphers = 'ALL:aNULL:eNULL'
   
     def initialize(params)
-      @ca_cert_path = (params[:ca_cert_path] ? params[:ca_cert_path] : @@default_ca_cert_path)
+      @ca_cert_path = (params[:ca_cert_path] ? params[:ca_cert_path] : find_ca_certs)
       puts "CA CERT PATH IS #{@ca_cert_path}"
       
       @host = params[:host]
@@ -27,7 +30,15 @@ module TLSCollect
       #@totals = {'null' => 0, 'export' => 0, 'low' => 0,
       #           'medium' => 0, 'high' => 0, 'dhe' => 0}
     end
-  
+
+    def find_ca_certs
+      @@default_ca_cert_paths.each do |path|
+        if File.exists?(path)
+          return path
+        end
+      end
+    end
+
     def to_h
       begin
         i = 0
