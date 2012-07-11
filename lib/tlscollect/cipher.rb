@@ -107,6 +107,14 @@ module TLSCollect
     def ssl2_0?
       protocols.include?("SSLv2")
     end
-  
+
+    def weak?
+      @key_length < 80
+    end
+
+    def noauth?
+      @name[0..3] == 'ADH-' or @name[0..5] == 'AECDH-'
+    end
+
   end
 end
