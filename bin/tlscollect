@@ -10,11 +10,15 @@ require 'tlscollect'
 opts = GetoptLong.new(
   [ '--host', '-H', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--addr', '-a', GetoptLong::REQUIRED_ARGUMENT ],
-  [ '--port', '-p', GetoptLong::REQUIRED_ARGUMENT ]
+  [ '--port', '-p', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--fast', '-f', GetoptLong::NO_ARGUMENT ],
+  [ '--timeout', '-t', GetoptLong::REQUIRED_ARGUMENT ],
 )
 
 host = addr = nil
 port = 443
+fast = false
+ctimeout = 10
 opts.each do |opt, arg|
   case opt
     when '--host'
@@ -23,6 +27,11 @@ opts.each do |opt, arg|
       addr = arg
     when '--port'
       port = arg.to_i
+    when '--fast'
+      fast = true
+    when '--timeout'
+      ctimeout = arg.to_i
+      ctimeout = 1 if ctimeout < 1
   end
 end
 
@@ -31,6 +40,8 @@ unless addr || host
   puts "  --host <host>"
   puts "  --addr <address> [optional]"
   puts "  --port <port> [default: 443]"
+  puts "  --fast [disables full ciphersuite probing]"
+  puts "  --timeout <n> [sets ssl connection timeout to <n> seconds]"
   exit 0
 end
 
@@ -40,8 +51,9 @@ puts "Beginning collection for the following addresses:\n\t#{addrs.join("\n\t")}
 addrs.each do |addr|
   puts "\nTLS configuration for #{host} (#{addr}), port #{port}\n\n"
 
-  collector = TLSCollect::Collector.new(:host => host, :addr => addr, :port => port)
-  collector.collect
+  collector = TLSCollect::Collector.new(:host => host, :addr => addr,
+                                        :port => port, :ctimeout => ctimeout)
+  collector.collect_basic
 
   puts "available protocols:\n\t#{collector.protocols.join("\n\t")}\n\n"
   puts "certificate:"
@@ -54,5 +66,9 @@ addrs.each do |addr|
   puts "\tissued: #{collector.certificate.raw.not_before}"
   puts "\texpires: #{collector.certificate.raw.not_after}#{(collector.certificate.expired? ? " (EXPIRED)" : "")}#{collector.certificate.longevity? ? "" : " (TOO LONG)"}\n\n"
   puts "default cipher:\n\t#{collector.default_cipher.cipher}\n\n"
-  puts "available ciphers:\n\t#{collector.ciphers.map{|cipher| cipher.cipher}.join("\n\t")}\n\n"
+
+  if not fast
+    collector.collect_cipher_order
+    puts "available ciphers:\n\t#{collector.ciphers.map{|cipher| cipher.cipher}.join("\n\t")}\n\n"
+  end
 end

@@ -4,7 +4,8 @@ module TLSCollect
   
   class Collector
     
-    attr_accessor :host, :addr, :port, :default_cipher, :protocols, :ciphers,
+    attr_accessor :host, :addr, :port, :ctimeout,
+                  :default_cipher, :protocols, :ciphers,
                   :certificate, :verified, :timestamp, :totals
   
     @@default_ca_cert_paths = [
@@ -22,6 +23,7 @@ module TLSCollect
       @host = params[:host]
       @addr = (params[:addr] ? params[:addr] : addr = TCPSocket.gethostbyname(host)[3])
       @port = params[:port]
+      @ctimeout = params[:ctimeout]
       @default_cipher = nil
       @verified = false
       @protocols = []
@@ -87,16 +89,19 @@ module TLSCollect
       !(protocols.include?("SSLv2") && protocols.length == 1)
     end
   
-    def collect
+    def collect_basic
       @timestamp = Time.now
       unless init_context
         raise CollectException.new, "Failed to initialize collection context."
       end
       @verified = certificate_verified?
-      @_default_cipher, @certificate = gather_defaults
-      unless @_default_cipher && @certificate
+      @default_cipher, @certificate = gather_defaults
+      unless @default_cipher && @certificate
         raise CollectException.new, "Could not determine default cipher and certificate."
       end
+    end
+
+    def collect_cipher_order
       test_ciphers
       test_cipher_order
     end
@@ -112,7 +117,7 @@ module TLSCollect
 
     def get_sock
       begin
-        timeout(30) do
+        timeout(@ctimeout) do
           #puts "getting socket for #{addr} on port #{port}"
           TCPSocket.open(addr, port)
         end
@@ -123,7 +128,7 @@ module TLSCollect
 
     def connect(ssl)
       begin
-        timeout(30) do
+        timeout(@ctimeout) do
           ssl.connect
         end
       rescue
