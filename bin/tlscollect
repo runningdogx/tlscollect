@@ -13,7 +13,36 @@ opts = GetoptLong.new(
   [ '--port', '-p', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--fast', '-f', GetoptLong::NO_ARGUMENT ],
   [ '--timeout', '-t', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
 )
+
+def usage
+  puts "Usage:"
+  puts "tlscollect [options...] host[:port]"
+  puts "  --host <host> [servername for TLS SNI extension]"
+  puts "  --starttls [for SMTP/IMAP, not implemented]"
+  puts "  --fast [disables full ciphersuite probing]"
+  puts "  --timeout <n> [sets ssl connection timeout to <n> seconds]"
+  puts
+  puts "examples:"
+  puts "  tlscollect www.google.com   [scans all ips for www.google.com, port 443]"
+  puts "  tlscollect --host x www.google.com [sends x as TLS Servername extension]"
+  puts "  tlscollect [::1]:8443  [scans ipv6 localhost port 8443]"
+  exit 0
+end
+
+def split_host_port(hostspec, default_port = 443)
+  /^(?<hostmatch>.+?)(:(?<portmatch>[0-9]+))?$/ =~ hostspec
+  if hostmatch and hostmatch[0] == '[' and hostmatch[-1] == ']'
+    host = hostmatch[1..-2]
+  else
+    host = hostmatch
+  end
+
+  port = (portmatch.nil? ? default_port : portmatch.to_i)
+
+  [host, port.to_i]
+end
 
 host = addr = nil
 port = 443
@@ -21,11 +50,13 @@ fast = false
 ctimeout = 10
 opts.each do |opt, arg|
   case opt
+    when '--help'
+      usage
     when '--host'
       host = arg
-    when '--addr'
+    when '--addr' # deprecated
       addr = arg
-    when '--port'
+    when '--port' # deprecated
       port = arg.to_i
     when '--fast'
       fast = true
@@ -35,17 +66,16 @@ opts.each do |opt, arg|
   end
 end
 
-unless addr || host
-  puts "You must specify a hostname or IP address (or both!)"
-  puts "  --host <host>"
-  puts "  --addr <address> [optional]"
-  puts "  --port <port> [default: 443]"
-  puts "  --fast [disables full ciphersuite probing]"
-  puts "  --timeout <n> [sets ssl connection timeout to <n> seconds]"
-  exit 0
+
+if ARGV.length > 0
+  # new style command line
+  host, port = split_host_port(ARGV[0], port)
+else
+  # old style command line
+  usage if not (addr || host)
+  host ||= addr
 end
 
-host ||= "Unknown"
 addrs = (addr ? [addr] : TCPSocket.gethostbyname(host)[3..-1])
 puts "Beginning collection for the following addresses:\n\t#{addrs.join("\n\t")}\n"
 addrs.each do |addr|
