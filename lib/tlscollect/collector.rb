@@ -1,3 +1,4 @@
+require 'pp'
 module TLSCollect
   class CollectException < Exception
   end
@@ -13,7 +14,7 @@ module TLSCollect
       "certs/ca-bundle.crt",
     ]
 
-    @@protocols = [:TLSv1_2, :TLSv1_1, :TLSv1, :SSLv3, :SSLv2]
+    @@protocols = [:"TLSv1.2", :"TLSv1.1", :"TLSv1", :"SSLv3", :"SSLv2"]
     @@basic_ciphers = 'ALL:aNULL:eNULL'
   
     def initialize(params)
@@ -65,48 +66,49 @@ module TLSCollect
     end
   
     def tls1_2?
-      protocols.include?("TLSv1.2") #|| tls1_1?
+      protocols.include?(:"TLSv1.2") #|| tls1_1?
     end
-  
+
     def tls1_1?
-      protocols.include?("TLSv1.1") #|| tls1_0?
+      protocols.include?(:"TLSv1.1") #|| tls1_0?
     end
-  
+
     def tls1_0?
-      protocols.include?("TLSv1")
+      protocols.include?(:"TLSv1")
     end
-  
+
     def ssl3_0?
-      protocols.include?("SSLv3")
+      protocols.include?(:"SSLv3")
     end
-  
+
     def ssl2_0?
-      protocols.include?("SSLv2")
+      protocols.include?(:"SSLv2")
     end
-  
+
     def pci_ready?
       Cipher.pci_ready?(ciphers) &&
-      !(protocols.include?("SSLv2") && protocols.length == 1)
+      !(protocols.include?(:"SSLv2") && protocols.length == 1)
     end
-  
+
     def collect_basic
       @timestamp = Time.now
-      unless init_context
+      @protocols = remote_protocols
+      unless init_ciphers
         raise CollectException.new, "Failed to initialize collection context."
       end
       @verified = certificate_verified?
-      @default_cipher, @certificate = gather_defaults
+      @default_cipher, @certificate = gather_defaults(@protocols.first, 'ALL:aNULL:eNULL')
       unless @default_cipher && @certificate
         raise CollectException.new, "Could not determine default cipher and certificate."
       end
     end
 
     def collect_cipher_order
-      test_ciphers
-      test_cipher_order
+      @ciphers = remote_ciphers
+      #test_cipher_order
     end
   
-    def init_context
+    def init_ciphers
       sock = get_sock
       return nil unless sock
       context = OpenSSL::SSL::SSLContext.new()
@@ -125,8 +127,32 @@ module TLSCollect
         nil
       end
     end
+  
+    # The grand purpose of this is to set up a typical ssl connection,
+    # and connect.  If a block is passed, at various stages control
+    # is passed to the block with a (state, obj) pair.
+    # - after sslcontext creation (:context, SSLContext)
+    # - after sslsocket creation (:sslsocket, SSLSocket)
+    def sslconnect(sock = nil, protocol = nil)
+      if not sock
+        return nil unless sock = get_sock
+      end
 
-    def connect(ssl)
+      if protocol
+        protocol = protocol.to_s
+        protocol[5] = '_' if protocol[5] == '.'
+        context = OpenSSL::SSL::SSLContext.new(protocol)
+      else
+        context = OpenSSL::SSL::SSLContext.new()
+      end
+      # this only applies server-side
+      #context.tmp_dh_callback = proc {|s, f, kl| puts "DH Keylength: #{kl}"}
+      yield :context, context if block_given?
+      ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
+      ssl.hostname = @host
+      yield :sslsocket, ssl if block_given?
+
+      # return the connected ssl socket, or nil on failure
       begin
         timeout(@ctimeout) do
           ssl.connect
@@ -137,90 +163,73 @@ module TLSCollect
     end
   
     def certificate_verified?
-      sock = get_sock
-      return false unless sock
-      context = OpenSSL::SSL::SSLContext.new()
-      context.ciphers = @@basic_ciphers
-      context.ca_file = @ca_cert_path
-      context.verify_depth = 16
-      context.verify_mode = OpenSSL::SSL::VERIFY_PEER
-      ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
+      verified = false
       begin
-        ssl.connect
+        ssl = sslconnect do |state, object|
+          if state == :sslcontext
+            object.ciphers = @@basic_ciphers
+            object.ca_file = @ca_cert_path
+            object.verify_depth = 16
+            object.verify_mode = OpenSSL::SSL::VERIFY_PEER
+          end
+        end
+        verified = true if ssl
       rescue
         puts "Certificate for #{@host} is unverified"
-        return false
       end
     
-      true
+      verified
     end
   
-    def try_protocol(protocol, sock)
-      begin
-        context = OpenSSL::SSL::SSLContext.new(protocol)
-        context.ciphers = @@basic_ciphers
-        ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
-        ssl.connect
-      rescue Exception => e
-        #unless e.message.length > 1
-        #  raise CollectException.new, "OpenSSL/Ruby protocol selection bug.  Argh."
-        #end
-        nil
-      end
-    end
-  
-    def gather_defaults
-      d = c = nil
-      @@protocols.each do |p|
-        return [ nil, nil ] unless (sock = get_sock)
-        ssl = try_protocol(p, sock)
-        @protocols << p.to_s if ssl
-      end
-      return [ nil, nil ] unless sock = get_sock
-      ssl = OpenSSL::SSL::SSLSocket.new(sock)
-      if ssl.connect
-        d = Cipher.parse(ssl.cipher) unless d
-        c = Certificate.parse(:raw => ssl.peer_cert, :verified => verified) unless c
-      end
-          
-      puts "Failure while gathering defaults" unless (d && c)
-      return [ d, c ]
-    end
-  
-    def test_protocols
-      @@protocols.each do |protocol|
-        sock = get_sock
-        context = OpenSSL::SSL::SSLContext.new(protocol)
-        ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
-        @protocols << protocol.to_s if connect(ssl)
-      end
-    end
-  
-    def test_ciphers
-      @candidate_ciphers.each do |cipher|
-        sock = get_sock
-        context = OpenSSL::SSL::SSLContext.new()
-        begin
-          context.ciphers = [cipher.to_a]
-        rescue
-          nil
+    def remote_protocols
+      @@protocols.reject do |p|
+        if p == :SSLv2
+          cipher,cert = gather_defaults(:"SSLv2")
+          not cipher
+        else
+          not sslconnect(nil, p)
         end
-        ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
-        if connect(ssl) 
-          p_check = false
-          cipher.protocols.each do |p|
-            if @protocols.include?(p)
-              p_check = true
+      end
+    end
+
+    def dh_process(session, xflag, keylength)
+      puts "DH CALLBACK: #{keylength}"
+    end
+  
+    def gather_defaults(protocol = nil, cipherlist = nil)
+      cipher = cert = nil
+      ssl = sslconnect(nil, protocol) { |state,obj|
+          obj.ciphers = cipherlist if cipherlist and state==:SSLContext
+          
+      }
+      if ssl
+        cipher = Cipher.parse(ssl.cipher)
+        cert = Certificate.parse(:raw => ssl.peer_cert, :verified => verified)
+      end
+
+      #puts "Failure while gathering defaults" unless (cipher && cert)
+      return [ cipher, cert ]
+    end
+  
+    def remote_ciphers(testprot = @protocols.first)
+      @candidate_ciphers.reject! { |cipher|
+        #puts "testing cipher #{cipher.name} for compat with #{testprot}"
+        not cipher.valid_for_protocol?(testprot)
+      }
+
+      @candidate_ciphers.reject do |cipher|
+        #puts cipher.name
+        ssl = sslconnect(ssl, testprot) do |state, obj|
+          if state == :context
+            begin
+              obj.ciphers = [cipher.to_a]
+            rescue
+              nil
             end
           end
-          unless p_check
-            #puts "Protocol check is false for #{cipher.cipher}"
-            next
-          end
-        
-          @ciphers << cipher
-          #@totals[cipher.strength] += 1
         end
+
+        not ssl
       end
     end
 
@@ -229,14 +238,13 @@ module TLSCollect
       @ciphers = []
       (0..(t_ciphers.length - 1)).each do |i|
         sock = get_sock
-        context = OpenSSL::SSL::SSLContext.new()
-        begin
-          context.ciphers = t_ciphers
-        rescue
-          nil
-        end
-        ssl = OpenSSL::SSL::SSLSocket.new(sock, context)
-        if connect(ssl)
+        if ssl = sslconnect(sock) {|state, object|
+          begin
+            object.ciphers = t_ciphers if state == :context
+          rescue
+            nil
+          end
+        }
           t_ciphers, d_ciphers = delete_cipher(t_ciphers, ssl.cipher)
           d_ciphers.each do |d|
             tc = Cipher.parse(d)
