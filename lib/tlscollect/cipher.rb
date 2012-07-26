@@ -131,14 +131,17 @@ module TLSCollect
     end
 
     def to_s
-      #cipher + " " + protocols.join('/')
+      cipher + " " + protocols.join('/')
+    end
+
+    def detailed_s
       "%s %s (%s:%i) (%s:%i) [%s]" %
         [kx_alg, auth_alg, bulk_alg, key_length, hash_alg, hash_bits,
         protocols.join('/')]
     end
   
     def to_a
-      [cipher, protocols.join('/'), key_length, alg_bits]
+      [cipher, protocols.join('/'), key_length, bulk_bits]
     end
   
     def to_h
