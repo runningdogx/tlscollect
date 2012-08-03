@@ -21,11 +21,11 @@ spec = Gem::Specification.new do |s|
   s.author = AUTHOR
   s.email = EMAIL
   s.homepage = HOMEPAGE
-  
+
   s.add_dependency "json"
   s.bindir = "bin"
   s.executables = %w(tlscollect)
-  
+
   s.require_path = 'lib'
   s.autorequire = GEM
   s.files = %w(LICENSE README.rdoc Rakefile) + Dir.glob("{lib,bin,spec}/**/*")

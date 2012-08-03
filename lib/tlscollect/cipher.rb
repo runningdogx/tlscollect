@@ -1,8 +1,8 @@
 module TLSCollect
   class Cipher
-    
+
     attr_accessor :name, :kx_alg, :auth_alg, :bulk_alg, :hash_alg, :protocols, :alg_bits, :key_length, :order
-  
+
     def self.parse(cipher_a)
       c = cipher_a[0].split('-')
       if cipher_a[0].match(/^ECDH-/) ||
@@ -20,7 +20,7 @@ module TLSCollect
       else
         n_kx = n_auth = "RSA"
       end
-    
+
       if c[0] == 'EXP'
         c.shift
         exp = true
@@ -34,7 +34,7 @@ module TLSCollect
       n_key_length = cipher_a[-2]
       exp = true if n_key_length < 128
       n_alg_bits = cipher_a.last
-    
+
       self.new(:cipher => n_cipher,
                :kx_alg => n_kx,
                :auth_alg => n_auth,
@@ -45,7 +45,7 @@ module TLSCollect
                :alg_bits => n_alg_bits,
                :export => exp)
     end
-  
+
     def initialize(params)
       @name = params[:cipher]
       @kx_alg = params[:kx_alg]
@@ -58,7 +58,7 @@ module TLSCollect
       @alg_bits = params[:alg_bits]
       @order = 0
     end
-  
+
     def cipher
       name
     end
@@ -66,11 +66,11 @@ module TLSCollect
     def to_s
       cipher + " " + protocols.join('/')
     end
-  
+
     def to_a
       [cipher, protocols.join('/'), key_length, alg_bits]
     end
-  
+
     def to_h
       {
        'name'     => cipher,
@@ -87,26 +87,26 @@ module TLSCollect
        'preference' => order
        }      
     end
-  
+
     def tls1_2?
       protocols.include?("TLSv1.2") || tls1_1?
     end
-  
+
     def tls1_1?
       protocols.include?("TLSv1.1") || tls1_0?
     end
-  
+
     def tls1_0?
       protocols.include?("TLSv1")
     end
-  
+
     def ssl3_0?
       protocols.include?("SSLv3")
     end
-  
+
     def ssl2_0?
       protocols.include?("SSLv2")
     end
-  
+
   end
 end

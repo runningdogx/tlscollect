@@ -1,17 +1,17 @@
 module TLSCollect
   class Certificate
-    
+
     attr_accessor :signature_algorithm, :hash_algorithm, :encryption_algorithm,
                   :subject, :public_key, :raw, :verified, :not_before, :not_after
-  
+
     def self.parse(params)
       pkey = params[:raw].public_key
-    
+
       self.new(:raw => params[:raw],
                :verified => params[:verified],
                :public_key => pkey)
     end
-  
+
     def initialize(params)
       @raw = params[:raw]
       @verified = params[:verified]
@@ -26,22 +26,22 @@ module TLSCollect
       end
       @hash_algorithm.upcase!
     end
-  
+
     def certificate
       raw
     end
-  
+
     def to_xml
       r = REXML::Element.new "certificate"
       r.text = raw.to_s
-    
+
       r
     end
-  
+
     def to_json
       to_h.to_json
     end
-  
+
     #t.integer   :site_result_id, :null => false
     #t.datetime  :not_before, :null => false
     #t.datetime  :not_after,  :null => false
@@ -51,7 +51,7 @@ module TLSCollect
     #t.string    :hash_alg, :null => false
     #t.string    :enc_alg, :null => false
     #t.binary    :raw, :null => false
-  
+
     def to_h 
       { 'raw' => raw.to_s,
         'key_length' => key_length,
@@ -64,18 +64,18 @@ module TLSCollect
         'verified' => verified,
         'good_longevity' => longevity? }
     end
-  
+
     def cn
       hash_subject(raw.subject)['CN']  
     end
-    
+
     def splitter(pair)
       if pair.split('=').length == 2 
         return pair.split('=')
       end
       nil
     end
-  
+
     def hash_subject(subject)
       a = []
       subject.to_s.split('/').each do |nv|
@@ -85,7 +85,7 @@ module TLSCollect
       end
       Hash[*a.collect { |v| [v, v*2] }.flatten]
     end
-  
+
     def cn_matches?(hostname)
       hostname.match(subject['CN'].sub(/^\*\./, '.*\.')) ||
       hostname.match(subject['CN'].sub(/^\*\./, ''))
@@ -97,7 +97,7 @@ module TLSCollect
       !expired? &&
       raw.not_before < Time.now
     end
-  
+
     def issuing_ca
       if i = hash_subject(raw.issuer)['CN']
         return i
@@ -109,7 +109,7 @@ module TLSCollect
         end
       end
     end
-  
+
     def key_length
       public_key.n.num_bytes * 8
     end
@@ -126,15 +126,15 @@ module TLSCollect
       # allow 25 months, give or take
       (not_after.tv_sec - not_before.tv_sec) <=  65836800
     end
-  
+
     def invalid?(hostname)
       !valid?(hostname) || !verified
     end
-  
+
     def not_before
       raw.not_before
     end
-    
+
     def not_after
       raw.not_after
     end

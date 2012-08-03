@@ -1,12 +1,12 @@
 module TLSCollect
   class CollectException < Exception
   end
-  
+
   class Collector
-    
+
     attr_accessor :host, :addr, :port, :default_cipher, :protocols, :ciphers,
                   :certificate, :verified, :timestamp, :totals
-  
+
     @@default_ca_cert_path = "certs/ca-bundle.crt"
 
     @@protocols = [:TLSv1, :SSLv3, :SSLv2]
@@ -21,11 +21,11 @@ module TLSCollect
                        ['AES128-SHA', 'TLSv1/SSLv3', 128, 128],
                        ['EXP-RC4-MD5', 'SSLv2', 40, 128]
                       ]
-  
+
     def initialize(params)
       @ca_cert_path = (params[:ca_cert_path] ? params[:ca_cert_path] : @@default_ca_cert_path)
       puts "CA CERT PATH IS #{@ca_cert_path}"
-      
+
       @host = params[:host]
       @addr = (params[:addr] ? params[:addr] : addr = TCPSocket.gethostbyname(host)[3])
       @port = params[:port]
@@ -37,7 +37,7 @@ module TLSCollect
       #@totals = {'null' => 0, 'export' => 0, 'low' => 0,
       #           'medium' => 0, 'high' => 0, 'dhe' => 0}
     end
-  
+
     def to_h
       begin
         i = 0
@@ -60,32 +60,32 @@ module TLSCollect
       end
       h
     end
-  
+
     def tls1_2?
       protocols.include?("TLSv1.2") #|| tls1_1?
     end
-  
+
     def tls1_1?
       protocols.include?("TLSv1.1") #|| tls1_0?
     end
-  
+
     def tls1_0?
       protocols.include?("TLSv1")
     end
-  
+
     def ssl3_0?
       protocols.include?("SSLv3")
     end
-  
+
     def ssl2_0?
       protocols.include?("SSLv2")
     end
-  
+
     def pci_ready?
       Cipher.pci_ready?(ciphers) &&
       !(protocols.include?("SSLv2") && protocols.length == 1)
     end
-  
+
     def collect
       @timestamp = Time.now
       unless init_context
@@ -99,7 +99,7 @@ module TLSCollect
       test_ciphers
       test_cipher_order
     end
-  
+
     def init_context
       sock = get_sock
       return nil unless sock
@@ -137,7 +137,7 @@ module TLSCollect
         nil
       end
     end
-  
+
     def certificate_verified?
       sock = get_sock
       return false unless sock
@@ -153,10 +153,10 @@ module TLSCollect
         puts "Certificate for #{@host} is unverified"
         return false
       end
-    
+
       true
     end
-  
+
     def try_protocol(protocol, sock)
       begin
         context = OpenSSL::SSL::SSLContext.new(protocol)
@@ -170,7 +170,7 @@ module TLSCollect
         nil
       end
     end
-  
+
     def gather_defaults
       d = c = nil
       @@protocols.each do |p|
@@ -184,11 +184,11 @@ module TLSCollect
         d = Cipher.parse(ssl.cipher) unless d
         c = Certificate.parse(:raw => ssl.peer_cert, :verified => verified) unless c
       end
-          
+
       puts "Failure while gathering defaults" unless (d && c)
       return [ d, c ]
     end
-  
+
     def test_protocols
       @@protocols.each do |protocol|
         sock = get_sock
@@ -197,7 +197,7 @@ module TLSCollect
         @protocols << protocol.to_s if connect(ssl)
       end
     end
-  
+
     def test_ciphers
       @candidate_ciphers.each do |cipher|
         sock = get_sock
@@ -219,7 +219,7 @@ module TLSCollect
             #puts "Protocol check is false for #{cipher.cipher}"
             next
           end
-        
+
           @ciphers << cipher
           #@totals[cipher.strength] += 1
         end
@@ -255,7 +255,7 @@ module TLSCollect
       @default_cipher = @ciphers.first
       @ciphers
     end
-  
+
     def included_cipher?(cipher)
       @ciphers.each do |c|
         if c.cipher == cipher.cipher
@@ -264,19 +264,19 @@ module TLSCollect
       end
       nil
     end
-  
+
     def supported_protocol?(protocol)
       protocols.each {|p| return true if @protocols.include?(p)}
       false
     end
-  
+
     def delete_cipher(ciphers, cipher)
       cipher = Cipher.parse(cipher).cipher
       d = []
       ciphers.each { |c|
         d << ciphers.delete(c) if Cipher.parse(c).cipher == cipher
       }
-    
+
       [ciphers, d]
     end
   end
